@@ -7,8 +7,18 @@ import shap
 from reduced_features import FinancialData
 from transformers import DataFrameTransformer # Used in pipeline  # noqa: F401
 import joblib
+from PIL import Image
 
 pipeline = joblib.load('lightgbm_pipeline.pkl')
+
+def plotly_chart(fig, use_static=True):
+    config = {
+        'staticPlot': use_static,
+        'displayModeBar': False,
+        'scrollZoom': False,
+        'doubleClick': False
+    }
+    st.plotly_chart(fig, config=config, use_container_width=True)
 
 def upload_file():
     st.header("📂 Upload Financial Data")
@@ -166,13 +176,17 @@ def predict_bankruptcy_3yr(ratios_df, model):
 
 
 def plot_feature_importance(pipeline, feature_names):
-    """
-    Plot feature importance from the model.
+    with st.expander("What does this chart mean?"):
+        st.markdown("""
+                    ### Feature Importance (Permutation Method)
 
-    Parameters:
-    - model: Trained Gradient Boosting model in the pipeline.
-    - feature_names: List of feature names used in the model.
-    """
+                    This chart shows how much each feature contributes to the model’s performance.  
+                    - The importance is measured by how much the model's accuracy drops when each feature is randomly shuffled.
+                    - A **higher score** means the feature is **more important** to making accurate predictions.
+                    - Features are ranked from most to least important.
+
+                    Use this to understand which financial ratios the model considers most impactful in predicting bankruptcy.
+        """)
     # Accessing the feature importances from the model in the pipeline
     feature_importances = pipeline.named_steps['clf'].feature_importances_
     
@@ -180,7 +194,7 @@ def plot_feature_importance(pipeline, feature_names):
     sorted_importances = feature_importances[sorted_idx]
     sorted_features = np.array(feature_names)[sorted_idx]
     
-    st.subheader("Feature Contribution to Prediction")
+    # st.subheader("Feature Contribution to Prediction")
     
     # Create the bar chart
     fig = px.bar(
@@ -189,11 +203,12 @@ def plot_feature_importance(pipeline, feature_names):
         
     )
     fig.update_layout(
+        title="Feature Importance (Permutation Method)",
         xaxis_title="Feature", 
         yaxis_title="Importance"
     )
     
-    st.plotly_chart(fig)
+    plotly_chart(fig)
     
 def plot_gauge(probability, threshold=0.5):
     """
@@ -226,7 +241,7 @@ def plot_gauge(probability, threshold=0.5):
         }
     ))
 
-    st.plotly_chart(fig, use_container_width=True)
+    plotly_chart(fig)
  
 
 def display_tooltips():
@@ -310,10 +325,21 @@ def get_shap_explainer(_model):
     return shap.TreeExplainer(_model)
 
 
-def plot_local_shap_contributions(pipeline_model, ratios_df):
+def plot_shap_contributions(pipeline, ratios_df):
+    with st.expander("What does this chart mean?"):
+        st.markdown("""
+                    #### SHAP Feature Contributions
+                    This chart displays the **financial ratios** that most influenced the model's prediction **for this specific input**.
+
+                    - **Red bars** indicate a **positive contribution** toward predicting bankruptcy (i.e., pushing the prediction closer to 1).
+                    - **Green bars** represent **negative contributions** (i.e., pushing the prediction toward 0).
+                    - The longer the bar, the **stronger the impact** of that feature on the model’s output.
+
+                    SHAP (SHapley Additive exPlanations) values are a way to explain individual predictions by showing how each feature shifts the prediction from the base value (average prediction) to the final predicted probability.
+        """)
     # Extract raw model from pipeline
-    if hasattr(pipeline_model, 'named_steps') and 'clf' in pipeline_model.named_steps:
-        raw_model = pipeline_model.named_steps['clf']
+    if hasattr(pipeline, 'named_steps') and 'clf' in pipeline.named_steps:
+        raw_model = pipeline.named_steps['clf']
     else:
         raise ValueError("Pipeline must contain a 'clf' step with LightGBM as the final estimator.")
 
@@ -339,67 +365,8 @@ def plot_local_shap_contributions(pipeline_model, ratios_df):
         marker_color=colors
     ))
     
-    fig.update_layout(title='Top Feature Contributions (SHAP)', xaxis_title='SHAP Value')
-    return fig
-
-
-def get_lgbm_model_from_pipeline(pipeline_model):
-    if hasattr(pipeline_model, "named_steps") and "clf" in pipeline_model.named_steps:
-        return pipeline_model.named_steps["clf"]
-    raise ValueError("Pipeline must contain a 'clf' step with LightGBM as the final estimator.")
-
-def plot_waterfall_of_shap(pipeline_model, ratios_df):
-    lgb_model = get_lgbm_model_from_pipeline(pipeline_model)
-    explainer = get_shap_explainer(lgb_model)
-    shap_values = explainer.shap_values(ratios_df)
-
-    if isinstance(shap_values, list) and len(shap_values) == 2:
-        shap_vals = shap_values[1][0]  # class 1, first row
-        base_value = explainer.expected_value[1]
-    elif isinstance(shap_values, np.ndarray):
-        shap_vals = shap_values[0]
-        base_value = explainer.expected_value
-    else:
-        raise ValueError("Unexpected SHAP output format.")
-
-    feature_names = ratios_df.columns
-    feature_values = ratios_df.iloc[0]
-    sorted_idx = np.argsort(np.abs(shap_vals))[::-1][:10]
-
-    fig = go.Figure()
-    cum_value = base_value
-    for i in sorted_idx:
-        val = shap_vals[i]
-        cum_value += val
-        fig.add_trace(go.Bar(
-            x=[feature_names[i]],
-            y=[val],
-            name=f"{feature_names[i]} = {feature_values[i]:.2f}",
-            marker_color='red' if val > 0 else 'green'
-        ))
-
-    fig.update_layout(title="SHAP Waterfall", xaxis_title="Feature", yaxis_title="SHAP Value")
-    return fig
-
-def plot_radar_chart(ratios_df):
-    """Generate a radar chart for each company in financial ratios DataFrame."""
-    if ratios_df.empty:
-        st.warning("No financial ratios available to plot.")
-        return
-
-    st.title=f"Radar Chart for Company {index+1}"
-    for index, row in ratios_df.iterrows():
-        ratios_df_T = pd.DataFrame({'Metric': row.index, 'Value': row.values})
-        
-        fig = px.line_polar(
-            ratios_df_T, 
-            r='Value', 
-            theta='Metric', 
-            line_close=True
-        )
-        fig.update_traces(fill='toself', line=dict(color='blue', width=3))
-        fig.update_layout(polar=dict(radialaxis=dict(visible=True, showgrid=True)))
-        st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(title='SHAP Feature Contributions', xaxis_title='SHAP Value')
+    plotly_chart(fig)
 
 def main():
     st.set_page_config(
@@ -430,10 +397,11 @@ def main():
     tabs = st.tabs(["Data Input", "Prediction", "Info"])
             
     with tabs[0]:  # "Data Input" tab
-        st.markdown("""
-                    # BANKRUPTCY PREDICTION MODEL
-                    ## ENTER YOUR FINANCIAL DATA BELOW(FROM NSE FIRMS)
-                    """)
+        st.markdown("""# BANKRUPTCY PREDICTION MODEL""")
+        
+        st.info('ALL SECTORS LISTED IN NSE SUPPORTED EXCEPT(BANKING, ENERGY AND INSURANCE SECTOR)')
+        
+        st.markdown("""## ENTER YOUR FINANCIAL DATA BELOW""")
         st.header("Choose Input Method")
         input_method = st.radio("", ["Manual Input", "Upload File(CSV/XLXS)"], horizontal=True)
 
@@ -467,25 +435,46 @@ def main():
             ratios_df = data.ratios()
             
             predict_bankruptcy_3yr(ratios_df, pipeline)
+            image = Image.open('images/lgbm_eval.png')
+            with st.expander('What does this image mean?'):
+                st.markdown("""
+                            ### Model Evaluation Explained
+
+                            This panel provides a comprehensive evaluation of the model’s performance on test data:
+
+                            ---
+
+                            #### 1️.ROC AUC Curve *(Top-Left)*  
+                            - Plots **True Positive Rate (Recall)** vs. **False Positive Rate**.  
+                            - The **AUC (Area Under Curve)** measures overall model ability to distinguish between bankrupt and non-bankrupt firms.  
+                            - A perfect model has AUC = 1.0; random guessing = 0.5.
+
+                            ---
+
+                            #### 2️.Confusion Matrix *(Top-Right)*  
+                            - Shows how many predictions the model got **correct and incorrect**.  
+                            - Rows = actual values, Columns = predicted values.  
+                            - You want high values on the **diagonal** (correct predictions).
+
+                            ---
+
+                            #### 3️.Precision-Recall Curve *(Bottom-Left)*  
+                            - Focuses on performance in **imbalanced datasets**.  
+                            - Higher area under the curve = better model for identifying bankrupt firms with fewer false alarms.  
+                            - Useful when **False Negatives** (missing bankrupt firms) are very costly.
+
+                            ---
+
+                            #### 4️.Probability Distribution *(Bottom-Right)*  
+                            - Shows predicted probability scores for both classes.  
+                            - Helps visualize **model confidence**:  
+                            - Blue = not bankrupt  
+                            - Orange = bankrupt  
+                            - Good separation = model assigns high probabilities correctly.
+                """)
+            st.image(image, use_container_width=True)
             plot_feature_importance(pipeline, ratios_df.columns)
-            st.plotly_chart(plot_local_shap_contributions(pipeline, ratios_df))
-            st.markdown("""
-                        ## SHAP Feature Contribution
-                        - Red color: Indicates higher feature values, typically increasing the predicted probability of bankruptcy.
-
-                        - Green color: Indicates lower feature values, typically decreasing the predicted probability of bankruptcy.
-
-                        - This helps you see, at a glance, not just which features are important but also how their values impact the model’s prediction."""
-                
-            )
-            st.plotly_chart(plot_waterfall_of_shap(pipeline, ratios_df))
-            st.markdown("""
-                        ## SHAP Values Waterfall
-                        - Each feature contributes to increase or decrease the base value toward the final prediction.
-                        - Positive SHAP value (red bar) → pushes prediction toward bankruptcy (class 1).
-                        - Negative SHAP value (green bar) → pushes prediction toward non-bankruptcy (class 0)"""
-            )
-            plot_radar_chart(ratios_df)
+            plot_shap_contributions(pipeline, ratios_df)
             
         else:
             st.info("Submit data from the 'Data Input' tab to see the prediction.")
