@@ -58,23 +58,33 @@ def manual_input():
     col1, col2, col3 = st.columns(3, vertical_alignment="top", border=True, gap="small")
     with col1:
         "Consolidated Statement of Profit or Loss"
-        revenue = st.number_input("Revenue", step=1000.0, value=None)
+        revenue = st.number_input("Revenue/Sales", step=1000.0, value=None, placeholder="Required")
         ebit = st.number_input("Operating Profit/Loss", step=1000.0, value=None)
-        net_income = st.number_input("Profit/Loss of the Year", step=1000.0, value=None)
+        with st.expander("Don't have Operating Profit/Loss? Let's Estimate it"):
+            st.markdown("*Provide values to estimate Operating Profit:*")
+            ebt = st.number_input("Profit/Loss Before Tax", step=1000.0, value=0.0)
+            finance_costs = st.number_input("Finance Costs/Interest Expenses", step=1000.0, value=0.0)
+            finance_income = st.number_input("Finance Income/Interest Income", step=1000.0, value=0.0)
+            monetary_gains = st.number_input("Monetary Gains/Losses", step=1000.0, value=0.0)
+            
+            estimated_ebit = ebt - finance_costs - finance_income - monetary_gains
+            st.success(f"Estimated Operating Profit: {estimated_ebit:.2f}")
+
+            ebit = estimated_ebit
+        net_income = st.number_input("Profit/Loss of the Year", step=1000.0, value=None, placeholder="Required")
 
     with col2:
         "Consolidated Statement of Financial Position"
-        current_receivables = st.number_input("Trade And Other Receivables", step=1000.0, value=None)
-        cash_and_equivalents = st.number_input("Cash And Bank Balances", step=1000.0, value=None)
-        current_assets = st.number_input("Total Current Assets", step=1000.0, value=None)
-        total_assets = st.number_input("Total Assets", step=1000.0, value=None)
-        retained_earnings = st.number_input("Retained Earnings", step=1000.0, value=None)
-        current_liabilities = st.number_input("Total Current Liabilities", step=1000.0, value=None)
-        total_liabilities = st.number_input("Total Liabilities", step=1000.0, value=None)
+        current_receivables = st.number_input("Trade And Other Receivables", step=1000.0, value=None, placeholder="Required")
+        cash_and_equivalents = st.number_input("Cash And Bank Balances", step=1000.0, value=None, placeholder="Required")
+        current_assets = st.number_input("Total Current Assets", step=1000.0, value=None, placeholder="Required")
+        total_assets = st.number_input("Total Assets", step=1000.0, value=None, placeholder="Required")
+        retained_earnings = st.number_input("Retained Earnings/Accumulated Losses", step=1000.0, value=None, placeholder="Required")
+        current_liabilities = st.number_input("Total Current Liabilities", step=1000.0, value=None, placeholder="Required")
+        total_liabilities = st.number_input("Total Liabilities", step=1000.0, value=None, placeholder="Required")
     with col3:
         "Consolidated Statement of Cash Flows"
-        net_cash_from_ops = st.number_input("Net Cash From/Used in Operating Activities", step=1000.0, value=None)
-        
+        net_cash_from_ops = st.number_input("Net Cash From/Used in Operating Activities", step=1000.0, value=None, placeholder="Required")
 
     return FinancialData(
         revenue=pd.Series(revenue),
@@ -397,35 +407,32 @@ def main():
     tabs = st.tabs(["Data Input", "Prediction", "Info"])
             
     with tabs[0]:  # "Data Input" tab
-        st.markdown("""# BANKRUPTCY PREDICTION MODEL""")
+        st.info('### BANKRUPTCY PREDICTION FOR FIRMS LISTED ON NAIROBI STOCK EXCHANGE MARKET(NSE)')
         
-        st.info('ALL SECTORS LISTED IN NSE SUPPORTED EXCEPT(BANKING, ENERGY AND INSURANCE SECTOR)')
+        st.warning('ALL SECTORS SUPPORTED EXCEPT(BANKING, ENERGY AND INSURANCE SECTOR)')
         
-        st.markdown("""## ENTER YOUR FINANCIAL DATA BELOW""")
         st.header("Choose Input Method")
         input_method = st.radio("", ["Manual Input", "Upload File(CSV/XLXS)"], horizontal=True)
 
-        financial_data = None  # define before if-block
-        # submit_disabled = financial_data is None
-        
         if input_method == "Manual Input":
             financial_data = manual_input()
+            if st.button("Submit", use_container_width=True):
+                has_missing = financial_data.ratios().isna().all().all()
+                if has_missing:
+                    st.warning('Fill all the Required Fields')
+                else:
+                    st.session_state["submitted_data"] = financial_data
+                    st.session_state["prediction_ready"] = True
+                    st.success("Data submitted. Check the Prediction tab.")
 
         elif input_method == "Upload File(CSV/XLXS)":
             uploaded_file = upload_file()
             if uploaded_file is not None:
                 financial_data = process_uploaded_file(uploaded_file)
-
-        if financial_data is not None:
-            if st.button("Submit"):
-                st.session_state["submitted_data"] = financial_data
-                st.session_state["prediction_ready"] = True
-                st.success("Data submitted. Check the Prediction tab.")
-        
-        # if st.button("Submit", disabled=submit_disabled):
-        #     st.session_state["submitted_data"] = financial_data
-        #     st.session_state["prediction_ready"] = True
-        #     st.success("Data submitted. Check the Prediction tab.")
+                if st.button("Submit", use_container_width=True):
+                    st.session_state["submitted_data"] = financial_data
+                    st.session_state["prediction_ready"] = True
+                    st.success("Data submitted. Check the Prediction tab.")
                     
     with tabs[1]:  # "Prediction" tab
         st.header("Prediction")
