@@ -409,7 +409,7 @@ def main():
     with tabs[0]:  # "Data Input" tab
         st.info('### BANKRUPTCY PREDICTION FOR FIRMS LISTED ON NAIROBI STOCK EXCHANGE MARKET(NSE)')
         
-        st.warning('ALL SECTORS SUPPORTED EXCEPT(BANKING, ENERGY AND INSURANCE SECTOR)')
+        st.warning('ALL SECTORS SUPPORTED EXCEPT BANKING')
         
         st.header("Choose Input Method")
         input_method = st.radio("", ["Manual Input", "Upload File(CSV/XLXS)"], horizontal=True)
